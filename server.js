@@ -125,7 +125,7 @@ app.post('/register-client', async (req, res) => {
         }
       };
 
-      let description = `☕ **¡Bienvenido a The Coffee Corner!**\n\n`;
+      let description = `☕ **¡Bienvenido a The Coffee Shop!**\n\n`;
       description += `🎉 ¡Ya estás oficialmente registrado, ${fullName}!\n\n`;
       description += `📋 **Detalles de tu registro:**\n`;
       description += `• 🔑 ID de Cliente: **${clientId}**\n`;
