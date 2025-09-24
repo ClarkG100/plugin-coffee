@@ -5,9 +5,10 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// In-memory storage for feedback (in production, use a database)
-const feedbackStorage = {
-  negativeFeedback: []
+// In-memory storage for feedback and orders (in production, use a database)
+const storage = {
+  negativeFeedback: [],
+  orders: []
 };
 
 // Placeholder function to add client to bubble tea store database
@@ -15,10 +16,8 @@ const addClientToDatabase = async (clientData) => {
   try {
     console.log('📝 Would add client to database:', clientData);
     
-    // Simulate API call delay
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Simulate success (90% success rate for testing)
     const success = Math.random() > 0.1;
     
     if (success) {
@@ -34,17 +33,89 @@ const addClientToDatabase = async (clientData) => {
   }
 };
 
+// Function to create a new bubble tea order
+const createBubbleTeaOrder = async (orderData) => {
+  try {
+    console.log('🧋 Creating new bubble tea order:', orderData);
+    
+    // Validate required fields
+    if (!orderData.clientName || !orderData.teaType || !orderData.sugarPercentage) {
+      throw new Error('Client name, tea type, and sugar percentage are required');
+    }
+
+    // Create order object with metadata
+    const order = {
+      orderId: generateOrderId(),
+      clientName: orderData.clientName.trim(),
+      phone: orderData.phone ? orderData.phone.trim() : null,
+      teaType: orderData.teaType.trim(),
+      sugarPercentage: orderData.sugarPercentage,
+      iceLevel: orderData.iceLevel || 'normal', // low, normal, extra, none
+      size: orderData.size || 'medium', // small, medium, large
+      toppings: orderData.toppings || [], // array of toppings
+      specialInstructions: orderData.specialInstructions || '',
+      orderDate: new Date().toISOString(),
+      estimatedReadyTime: new Date(Date.now() + 15 * 60000).toISOString(), // 15 minutes from now
+      status: 'received', // received, preparing, ready, completed
+      totalPrice: calculateOrderPrice(orderData),
+      source: 'whatsapp_bot'
+    };
+
+    // Store order (in production, save to database)
+    storage.orders.push(order);
+    
+    // Simulate order processing delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    console.log('✅ Order created successfully');
+    return {
+      success: true,
+      order: order,
+      message: 'Order received successfully'
+    };
+    
+  } catch (error) {
+    console.error('Error creating order:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+// Calculate order price based on selections
+const calculateOrderPrice = (orderData) => {
+  let basePrice = 0;
+  
+  // Base price by size
+  switch (orderData.size) {
+    case 'small': basePrice = 4.50; break;
+    case 'large': basePrice = 6.50; break;
+    default: basePrice = 5.50; // medium
+  }
+  
+  // Add toppings (each topping costs $0.75)
+  const toppingsPrice = (orderData.toppings ? orderData.toppings.length : 0) * 0.75;
+  
+  return basePrice + toppingsPrice;
+};
+
+// Generate unique order ID
+const generateOrderId = () => {
+  const timestamp = Date.now().toString().slice(-6);
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  return `ORD${timestamp}${random}`;
+};
+
 // Function to collect and store negative feedback
 const collectNegativeFeedback = async (feedbackData) => {
   try {
     console.log('📋 Collecting negative feedback:', feedbackData);
     
-    // Validate required fields
     if (!feedbackData.clientName || !feedbackData.feedback) {
       throw new Error('Client name and feedback are required');
     }
 
-    // Create feedback object with metadata
     const feedbackEntry = {
       id: generateFeedbackId(),
       clientName: feedbackData.clientName.trim(),
@@ -58,10 +129,8 @@ const collectNegativeFeedback = async (feedbackData) => {
       source: 'whatsapp_bot'
     };
 
-    // Store feedback (in production, save to database)
-    feedbackStorage.negativeFeedback.push(feedbackEntry);
+    storage.negativeFeedback.push(feedbackEntry);
     
-    // Simulate processing delay
     await new Promise(resolve => setTimeout(resolve, 300));
     
     console.log('✅ Negative feedback stored successfully');
@@ -91,8 +160,130 @@ const generateFeedbackId = () => {
 const generateClientId = () => {
   const timestamp = Date.now().toString().slice(-6);
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `BUBBLE${timestamp}${random}`; // Changed from CAFE to BUBBLE
+  return `BUBBLE${timestamp}${random}`;
 };
+
+// Route to handle bubble tea orders
+app.post('/place-order', async (req, res) => {
+  try {
+    const {
+      clientName,
+      phone,
+      teaType,
+      sugarPercentage,
+      iceLevel,
+      size,
+      toppings,
+      specialInstructions
+    } = req.body;
+
+    // Validate required fields
+    if (!clientName || !teaType || !sugarPercentage) {
+      return res.status(400).json({
+        error: "Missing required fields: clientName, teaType, and sugarPercentage are required"
+      });
+    }
+
+    // Log received order data
+    console.log("🧋 Received new order:");
+    console.log("👤 Client Name:", clientName);
+    console.log("📞 Phone:", phone || "Not provided");
+    console.log("🍵 Tea Type:", teaType);
+    console.log("🍯 Sugar Percentage:", sugarPercentage + "%");
+    console.log("🧊 Ice Level:", iceLevel || "normal");
+    console.log("📏 Size:", size || "medium");
+    console.log("🍡 Toppings:", toppings ? toppings.join(', ') : "None");
+    console.log("📝 Special Instructions:", specialInstructions || "None");
+
+    // Create the order
+    const orderResult = await createBubbleTeaOrder({
+      clientName,
+      phone,
+      teaType,
+      sugarPercentage,
+      iceLevel,
+      size,
+      toppings,
+      specialInstructions
+    });
+
+    if (orderResult.success) {
+      const order = orderResult.order;
+      
+      // Success response - CLIENT FACING IN SPANISH
+      const rawData = {
+        "order_status": "received",
+        "order_id": order.orderId,
+        "order_details": {
+          "client_name": clientName,
+          "tea_type": teaType,
+          "sugar_percentage": sugarPercentage,
+          "ice_level": iceLevel,
+          "size": size,
+          "toppings": toppings,
+          "special_instructions": specialInstructions,
+          "order_date": order.orderDate,
+          "estimated_ready_time": order.estimatedReadyTime,
+          "total_price": order.totalPrice
+        }
+      };
+
+      let description = `🧋 **¡Pedido Confirmado!**\n\n`;
+      description += `✅ Hemos recibido tu pedido correctamente.\n\n`;
+      description += `🔑 **Número de Pedido:** ${order.orderId}\n`;
+      description += `💰 **Total:** $${order.totalPrice.toFixed(2)}\n\n`;
+      description += `📋 **Detalles de tu pedido:**\n`;
+      description += `• 👤 Nombre: ${clientName}\n`;
+      if (phone) description += `• 📞 Teléfono: ${phone}\n`;
+      description += `• 🍵 Tipo de Té: ${teaType}\n`;
+      description += `• 🍯 Azúcar: ${sugarPercentage}%\n`;
+      description += `• 🧊 Hielo: ${iceLevel || 'normal'}\n`;
+      description += `• 📏 Tamaño: ${size || 'medium'}\n`;
+      if (toppings && toppings.length > 0) {
+        description += `• 🍡 Toppings: ${toppings.join(', ')}\n`;
+      }
+      if (specialInstructions) {
+        description += `• 📝 Instrucciones: ${specialInstructions}\n`;
+      }
+      description += `• ⏰ Hora del pedido: ${new Date(order.orderDate).toLocaleTimeString('es-ES')}\n`;
+      description += `• 🕐 Tiempo estimado: 15-20 minutos\n\n`;
+      description += `📍 **Para recoger en:** The Bubble Tea Shop\n`;
+      description += `📞 **Teléfono de la tienda:** +1 (555) 123-TEA\n\n`;
+      description += `¡Gracias por tu pedido! 🧋✨`;
+
+      res.json({
+        raw: rawData,
+        markdown: "...",
+        type: "markdown",
+        desc: description
+      });
+    } else {
+      // Failure response - CLIENT FACING IN SPANISH
+      let description = `❌ **Error al Procesar Pedido**\n\n`;
+      description += `Lo sentimos, ocurrió un error al procesar tu pedido.\n\n`;
+      description += `Por favor, verifica que todos los datos estén correctos e intenta nuevamente.`;
+
+      res.json({
+        raw: { error: orderResult.error },
+        markdown: "...",
+        type: "markdown",
+        desc: description
+      });
+    }
+  } catch (error) {
+    console.error("Error processing order:", error);
+    
+    let description = `❌ **Error del Sistema**\n\n`;
+    description += `Ocurrió un error inesperado al procesar tu pedido. Por favor, intenta más tarde.`;
+
+    res.json({
+      raw: { error: error.message },
+      markdown: "...", 
+      type: "markdown",
+      desc: description
+    });
+  }
+});
 
 // Route to handle negative feedback collection
 app.post('/negative-feedback', async (req, res) => {
@@ -106,15 +297,12 @@ app.post('/negative-feedback', async (req, res) => {
       category
     } = req.body;
 
-    // Validate required fields
     if (!clientName || !feedback) {
       return res.status(400).json({
-        error: "Missing required fields: clientName and feedback are required",
-        details: "Please provide your name and feedback description"
+        error: "Missing required fields: clientName and feedback are required"
       });
     }
 
-    // Log received feedback data
     console.log("📋 Received negative feedback:");
     console.log("👤 Client Name:", clientName);
     console.log("💬 Feedback:", feedback);
@@ -123,7 +311,6 @@ app.post('/negative-feedback', async (req, res) => {
     console.log("⭐ Rating:", rating || "Not provided");
     console.log("🏷️ Category:", category || "general");
 
-    // Collect and store feedback
     const feedbackResult = await collectNegativeFeedback({
       clientName,
       feedback,
@@ -134,7 +321,6 @@ app.post('/negative-feedback', async (req, res) => {
     });
 
     if (feedbackResult.success) {
-      // Success response - CLIENT FACING IN SPANISH
       const rawData = {
         "feedback_status": "received",
         "feedback_id": feedbackResult.feedbackId,
@@ -169,7 +355,6 @@ app.post('/negative-feedback', async (req, res) => {
         desc: description
       });
     } else {
-      // Failure response - CLIENT FACING IN SPANISH
       let description = `❌ **Error al Procesar Comentarios**\n\n`;
       description += `Lo sentimos, ocurrió un error al procesar tus comentarios.\n\n`;
       description += `Por favor, intenta nuevamente en unos minutos.`;
@@ -207,25 +392,20 @@ app.post('/register-client', async (req, res) => {
       preferences
     } = req.body;
 
-    // Validate required fields
     if (!fullName || !phone) {
       return res.status(400).json({
-        error: "Missing required fields: fullName and phone are required",
-        details: "Please provide at least a name and phone number for registration"
+        error: "Missing required fields: fullName and phone are required"
       });
     }
 
-    // Log received data
     console.log("🧋 Received client registration data:");
     console.log("👤 Name:", fullName);
     console.log("📞 Phone:", phone);
     console.log("📧 Email:", email || "Not provided");
     console.log("🥤 Favorite Drink:", favoriteDrink || "Not specified");
 
-    // Generate client ID
     const clientId = generateClientId();
 
-    // Prepare client data for database
     const clientData = {
       clientId,
       fullName: fullName.trim(),
@@ -237,11 +417,9 @@ app.post('/register-client', async (req, res) => {
       source: 'whatsapp_bot'
     };
 
-    // Add client to database
     const registrationSuccess = await addClientToDatabase(clientData);
 
     if (registrationSuccess) {
-      // Success response - CLIENT FACING IN SPANISH
       const rawData = {
         "registration_status": "success",
         "client_id": clientId,
@@ -276,7 +454,6 @@ app.post('/register-client', async (req, res) => {
         desc: description
       });
     } else {
-      // Failure response - CLIENT FACING IN SPANISH
       const rawData = {
         "registration_status": "failed",
         "client_id": clientId,
@@ -315,7 +492,22 @@ app.post('/register-client', async (req, res) => {
   }
 });
 
-// Additional endpoint to check client status (optional)
+// Admin endpoint to view all orders
+app.get('/admin/orders', (req, res) => {
+  try {
+    res.json({
+      total_orders: storage.orders.length,
+      orders: storage.orders
+    });
+  } catch (error) {
+    console.error("Error retrieving orders:", error);
+    res.status(500).json({
+      error: "Error retrieving orders"
+    });
+  }
+});
+
+// Additional endpoint to check client status
 app.post('/check-client', async (req, res) => {
   try {
     const { phone } = req.body;
@@ -328,11 +520,9 @@ app.post('/check-client', async (req, res) => {
 
     console.log(`🔍 Checking client status for phone: ${phone}`);
     
-    // Simulate database lookup
     const isRegistered = Math.random() > 0.5;
     
     if (isRegistered) {
-      // CLIENT FACING IN SPANISH
       let description = `✅ **Cliente Registrado**\n\n`;
       description += `Encontramos tu registro en nuestro sistema.\n\n`;
       description += `📞 Teléfono: ${phone}\n`;
@@ -343,7 +533,6 @@ app.post('/check-client', async (req, res) => {
         desc: description
       });
     } else {
-      // CLIENT FACING IN SPANISH
       let description = `❌ **Cliente No Encontrado**\n\n`;
       description += `No encontramos un registro con ese número de teléfono.\n\n`;
       description += `¿Te gustaría registrarte ahora?`;
@@ -366,35 +555,41 @@ app.post('/check-client', async (req, res) => {
   }
 });
 
-// Health check endpoint (internal - keep in English)
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
-    message: 'Bubble Tea Shop Feedback System is running',
+    message: 'Bubble Tea Shop System is running',
     timestamp: new Date().toISOString(),
     endpoints: [
       'POST /register-client',
       'POST /check-client',
+      'POST /place-order',
       'POST /negative-feedback',
+      'GET /admin/orders',
       'GET /admin/feedback',
       'GET /health'
     ],
     stats: {
-      total_feedback: feedbackStorage.negativeFeedback.length
+      total_clients: 'N/A', // Would come from database
+      total_orders: storage.orders.length,
+      total_feedback: storage.negativeFeedback.length
     }
   });
 });
 
-// Root endpoint (internal - keep in English)
+// Root endpoint
 app.get('/', (req, res) => {
   res.json({
-    service: 'Bubble Tea Shop Feedback System',
-    version: '1.1.0',
-    description: 'WhatsApp bot backend for client registration and feedback collection',
+    service: 'Bubble Tea Shop System',
+    version: '1.2.0',
+    description: 'WhatsApp bot backend for client registration, orders, and feedback',
     endpoints: {
       'POST /register-client': 'Register a new client',
       'POST /check-client': 'Check if a client is registered',
+      'POST /place-order': 'Place a new bubble tea order',
       'POST /negative-feedback': 'Collect negative feedback from clients',
+      'GET /admin/orders': 'View all orders (internal)',
       'GET /admin/feedback': 'View all feedback (internal)',
       'GET /health': 'Health check'
     }
@@ -404,12 +599,13 @@ app.get('/', (req, res) => {
 // Initialize server
 app.listen(PORT, (error) => {
   if (!error) {
-    console.log(`🧋 Bubble Tea Shop Feedback System running on http://localhost:${PORT}`);
+    console.log(`🧋 Bubble Tea Shop System running on http://localhost:${PORT}`);
     console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-    console.log(`📝 Registration endpoint: POST http://localhost:${PORT}/register-client`);
-    console.log(`📋 Feedback endpoint: POST http://localhost:${PORT}/negative-feedback`);
-    console.log(`🔍 Check client endpoint: POST http://localhost:${PORT}/check-client`);
-    console.log(`👨‍💼 Admin feedback: GET http://localhost:${PORT}/admin/feedback`);
+    console.log(`📝 Registration: POST http://localhost:${PORT}/register-client`);
+    console.log(`🛒 Place order: POST http://localhost:${PORT}/place-order`);
+    console.log(`📋 Feedback: POST http://localhost:${PORT}/negative-feedback`);
+    console.log(`🔍 Check client: POST http://localhost:${PORT}/check-client`);
+    console.log(`👨‍💼 Admin orders: GET http://localhost:${PORT}/admin/orders`);
   } else {
     console.log("❌ Error occurred, server can't start", error);
   }
